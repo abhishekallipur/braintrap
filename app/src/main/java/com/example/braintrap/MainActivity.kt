@@ -25,6 +25,8 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     
+    private var hasCheckedFocusMode = false
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -39,6 +41,46 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    
+    override fun onResume() {
+        super.onResume()
+        
+        // Check focus mode only once per launch
+        if (!hasCheckedFocusMode) {
+            hasCheckedFocusMode = true
+            checkFocusModeAccess()
+        }
+    }
+    
+    private fun checkFocusModeAccess() {
+        // First check if focus mode is active
+        val focusPrefs = getSharedPreferences("focus_mode_prefs", MODE_PRIVATE)
+        val isFocusModeActive = focusPrefs.getBoolean("is_focus_mode_active", false)
+        
+        // If focus mode is NOT active, no need to verify
+        if (!isFocusModeActive) {
+            return
+        }
+        
+        // Focus mode IS active - check unlock method
+        val prefs = getSharedPreferences("braintrap_prefs", MODE_PRIVATE)
+        val unlockMethod = prefs.getString("unlock_method", "math") ?: "math"
+        
+        // If NFC unlock method is set, require NFC verification to access BrainTrap
+        if (unlockMethod == "nfc") {
+            // Launch NFC verification
+            val intent = android.content.Intent(this, com.example.braintrap.ui.NfcVerificationActivity::class.java)
+            startActivityForResult(intent, 1001)
+        }
+    }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 1001 && resultCode != RESULT_OK) {
+            // NFC not verified, close app
+            finish()
+        }
+    }
 }
 
 @Composable
@@ -47,12 +89,30 @@ fun MindfulUsageApp(context: android.content.Context) {
     val prefs = context.getSharedPreferences("mindful_usage_prefs", android.content.Context.MODE_PRIVATE)
     var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_complete", false)) }
     
-    // Check if permissions are granted
-    val hasAccessibility = PermissionManager.isAccessibilityServiceEnabled(
-        context, 
-        com.example.braintrap.service.AppBlockingService::class.java
-    )
-    val hasUsageStats = PermissionManager.isUsageStatsPermissionGranted(context)
+    // Check if permissions are granted - recompose when permissions change
+    var hasAccessibility by remember { 
+        mutableStateOf(
+            PermissionManager.isAccessibilityServiceEnabled(
+                context, 
+                com.example.braintrap.service.AppBlockingService::class.java
+            )
+        )
+    }
+    var hasUsageStats by remember { 
+        mutableStateOf(PermissionManager.isUsageStatsPermissionGranted(context))
+    }
+    
+    // Recheck permissions periodically
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            hasAccessibility = PermissionManager.isAccessibilityServiceEnabled(
+                context, 
+                com.example.braintrap.service.AppBlockingService::class.java
+            )
+            hasUsageStats = PermissionManager.isUsageStatsPermissionGranted(context)
+        }
+    }
     
     // Show onboarding if not completed or permissions missing
     if (showOnboarding || !hasAccessibility || !hasUsageStats) {
@@ -61,6 +121,12 @@ fun MindfulUsageApp(context: android.content.Context) {
             onComplete = {
                 prefs.edit().putBoolean("onboarding_complete", true).apply()
                 showOnboarding = false
+                // Force recheck permissions after onboarding
+                hasAccessibility = PermissionManager.isAccessibilityServiceEnabled(
+                    context, 
+                    com.example.braintrap.service.AppBlockingService::class.java
+                )
+                hasUsageStats = PermissionManager.isUsageStatsPermissionGranted(context)
             }
         )
         return
@@ -83,6 +149,9 @@ fun MindfulUsageApp(context: android.content.Context) {
                 },
                 onNavigateToAchievements = {
                     navController.navigate("achievements")
+                },
+                onNavigateToActivityGrid = {
+                    navController.navigate("activity_grid")
                 }
             )
         }
@@ -116,6 +185,14 @@ fun MindfulUsageApp(context: android.content.Context) {
         
         composable("achievements") {
             AchievementsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable("activity_grid") {
+            com.example.braintrap.ui.screen.ActivityGridScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

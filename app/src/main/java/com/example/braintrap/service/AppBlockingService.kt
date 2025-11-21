@@ -42,6 +42,12 @@ class AppBlockingService : AccessibilityService() {
             notificationTimeout = 0
         }
         setServiceInfo(info)
+        
+        // Load focus mode state from SharedPreferences
+        val focusPrefs = getSharedPreferences("focus_mode_prefs", MODE_PRIVATE)
+        isFocusModeActive = focusPrefs.getBoolean("is_focus_mode_active", false)
+        
+        instance = this
     }
     
     private val lastBlockedPackage = mutableSetOf<String>()
@@ -60,8 +66,12 @@ class AppBlockingService : AccessibilityService() {
                     return
                 }
                 
-                // Clean up expired whitelist entries
-                temporaryWhitelist.entries.removeIf { it.value < currentTime }
+                // Clean up expired whitelist entries and remove from lastBlockedPackage
+                val expiredPackages = temporaryWhitelist.filter { it.value < currentTime }.keys
+                expiredPackages.forEach { pkg ->
+                    temporaryWhitelist.remove(pkg)
+                    lastBlockedPackage.remove(pkg) // Allow re-blocking
+                }
                 
                 // Prevent duplicate blocks for the same app within 1 second
                 if (lastBlockedPackage.contains(packageName) && 
@@ -164,10 +174,31 @@ class AppBlockingService : AccessibilityService() {
         // Small delay to ensure app is closed
         kotlinx.coroutines.delay(400)
         
-        // Launch challenge activity directly (overlay style)
-        val intent = Intent(this, ChallengeActivity::class.java).apply {
+        // Check unlock method preference
+        val prefs = getSharedPreferences("braintrap_prefs", MODE_PRIVATE)
+        val unlockMethod = prefs.getString("unlock_method", "math") ?: "math"
+        
+        // In focus mode with NFC, use special blocking activity
+        if (isFocusModeActive && unlockMethod == "nfc") {
+            val intent = Intent(this, com.example.braintrap.ui.FocusModeBlockActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("PACKAGE_NAME", packageName)
+            }
+            startActivity(intent)
+            return
+        }
+        
+        // Launch appropriate unlock activity based on user preference
+        val intent = when (unlockMethod) {
+            "nfc" -> Intent(this, com.example.braintrap.ui.NfcUnlockActivity::class.java)
+            "both" -> {
+                // For "both" mode, let user choose in a dialog or default to math
+                Intent(this, ChallengeActivity::class.java)
+            }
+            else -> Intent(this, ChallengeActivity::class.java) // Default to math
+        }.apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("package_name", packageName)
+            putExtra("PACKAGE_NAME", packageName)
             putExtra("from_blocking", true)
         }
         startActivity(intent)
@@ -192,7 +223,7 @@ class AppBlockingService : AccessibilityService() {
         lastBlockedPackage.clear()
     }
     
-    fun temporarilyAllowApp(packageName: String, durationMinutes: Int = 2) {
+    fun temporarilyAllowApp(packageName: String, durationMinutes: Int = 10) {
         val expiryTime = System.currentTimeMillis() + (durationMinutes * 60 * 1000L)
         temporaryWhitelist[packageName] = expiryTime
         lastBlockedPackage.remove(packageName)
@@ -210,6 +241,10 @@ class AppBlockingService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        
+        // Load focus mode state from SharedPreferences
+        val focusPrefs = getSharedPreferences("focus_mode_prefs", MODE_PRIVATE)
+        isFocusModeActive = focusPrefs.getBoolean("is_focus_mode_active", false)
     }
     
     override fun onDestroy() {

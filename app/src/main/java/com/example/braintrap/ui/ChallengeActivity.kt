@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.Color
 class ChallengeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val packageName = intent.getStringExtra("package_name") ?: ""
+        // Support both "package_name" and "PACKAGE_NAME" for compatibility
+        val packageName = intent.getStringExtra("PACKAGE_NAME") 
+            ?: intent.getStringExtra("package_name") 
+            ?: ""
         val fromBlocking = intent.getBooleanExtra("from_blocking", false)
         val prefs = getSharedPreferences("braintrap_prefs", Context.MODE_PRIVATE)
         val bonusMinutes = prefs.getInt("bonus_time_minutes", 45)

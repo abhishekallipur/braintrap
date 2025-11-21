@@ -1,5 +1,6 @@
 package com.example.braintrap.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.braintrap.data.model.AppUsage
@@ -9,6 +10,7 @@ import com.example.braintrap.service.AppBlockingService
 import com.example.braintrap.service.UsageTrackingService
 import com.example.braintrap.util.AppInfoProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -23,6 +25,7 @@ data class TimeSavedStats(
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val timeLimitRepository: TimeLimitRepository,
     private val usageStatsRepository: UsageStatsRepository,
     private val usageTrackingService: UsageTrackingService,
@@ -41,6 +44,13 @@ class DashboardViewModel @Inject constructor(
     private var currentTimeLimits: List<com.example.braintrap.data.model.TimeLimit> = emptyList()
     
     init {
+        // Load focus mode state from SharedPreferences
+        val focusPrefs = context.getSharedPreferences("focus_mode_prefs", Context.MODE_PRIVATE)
+        _isFocusModeActive.value = focusPrefs.getBoolean("is_focus_mode_active", false)
+        
+        // Update service with loaded state
+        AppBlockingService.instance?.setFocusMode(_isFocusModeActive.value)
+        
         viewModelScope.launch {
             usageTrackingService.startTracking()
             
@@ -109,6 +119,11 @@ class DashboardViewModel @Inject constructor(
     
     fun toggleFocusMode() {
         _isFocusModeActive.value = !_isFocusModeActive.value
+        
+        // Save focus mode state to SharedPreferences
+        val focusPrefs = context.getSharedPreferences("focus_mode_prefs", Context.MODE_PRIVATE)
+        focusPrefs.edit().putBoolean("is_focus_mode_active", _isFocusModeActive.value).apply()
+        
         // Update blocking service
         AppBlockingService.instance?.setFocusMode(_isFocusModeActive.value)
         // Refresh app usage list to update focus mode status

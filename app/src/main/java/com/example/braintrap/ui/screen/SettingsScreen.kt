@@ -27,7 +27,19 @@ fun SettingsScreen(
 ) {
     val timeLimits by viewModel.timeLimits.collectAsState()
     val bonusTimeMinutes by viewModel.bonusTimeMinutes.collectAsState()
+    val unlockMethod by viewModel.unlockMethod.collectAsState()
+    val registeredNfcTag by viewModel.registeredNfcTag.collectAsState()
     val context = LocalContext.current
+    
+    var showNfcRegistration by remember { mutableStateOf(false) }
+    
+    if (showNfcRegistration) {
+        LaunchedEffect(Unit) {
+            val intent = android.content.Intent(context, com.example.braintrap.ui.NfcRegistrationActivity::class.java)
+            context.startActivity(intent)
+            showNfcRegistration = false
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -96,6 +108,27 @@ fun SettingsScreen(
                             contentDescription = "View Achievements"
                         )
                     }
+                }
+            }
+            
+            item {
+                // Unlock Method Card
+                UnlockMethodCard(
+                    selectedMethod = unlockMethod,
+                    onMethodSelected = { method ->
+                        viewModel.setUnlockMethod(method)
+                    }
+                )
+            }
+            
+            // Show NFC tag management if NFC is selected
+            if (unlockMethod == "nfc" || unlockMethod == "both") {
+                item {
+                    NfcTagManagementCard(
+                        registeredTag = registeredNfcTag,
+                        onRegisterTag = { showNfcRegistration = true },
+                        onClearTag = { viewModel.clearRegisteredNfcTag() }
+                    )
                 }
             }
             
@@ -389,6 +422,248 @@ fun TimeLimitItem(
                 enabled = timeLimit.isEnabled,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun UnlockMethodCard(
+    selectedMethod: String,
+    onMethodSelected: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = "🔓",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Unlock Method",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+            }
+            
+            Text(
+                text = "Choose how you want to unlock blocked apps",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            // Math Challenge Option
+            UnlockMethodOption(
+                icon = "🧮",
+                title = "Math Challenge",
+                description = "Solve puzzles to unlock (Default)",
+                isSelected = selectedMethod == "math",
+                onClick = { onMethodSelected("math") }
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // NFC Option
+            UnlockMethodOption(
+                icon = "📱",
+                title = "NFC Tag",
+                description = "Tap NFC tag to unlock instantly",
+                isSelected = selectedMethod == "nfc",
+                onClick = { onMethodSelected("nfc") }
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Both Option
+            UnlockMethodOption(
+                icon = "🔀",
+                title = "Both Methods",
+                description = "Use either math or NFC to unlock",
+                isSelected = selectedMethod == "both",
+                onClick = { onMethodSelected("both") }
+            )
+        }
+    }
+}
+
+@Composable
+fun UnlockMethodOption(
+    icon: String,
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) 
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isSelected) 
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else null,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = icon,
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(end = 16.dp)
+            )
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (isSelected) 
+                        androidx.compose.ui.text.font.FontWeight.Bold 
+                    else androidx.compose.ui.text.font.FontWeight.Normal
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            if (isSelected) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NfcTagManagementCard(
+    registeredTag: String?,
+    onRegisterTag: () -> Unit,
+    onClearTag: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (registeredTag != null)
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = if (registeredTag != null) "✅" else "⚠️",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = if (registeredTag != null) "NFC Tag Registered" else "No NFC Tag Registered",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+            }
+            
+            if (registeredTag != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Tag ID:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = registeredTag,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onClearTag,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Clear Tag")
+                    }
+                    
+                    Button(
+                        onClick = onRegisterTag,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Change Tag")
+                    }
+                }
+            } else {
+                Text(
+                    text = "You must register an NFC tag to use NFC unlock. Only the registered tag will be able to unlock your apps.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Button(
+                    onClick = onRegisterTag,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Register NFC Tag Now")
+                }
+            }
         }
     }
 }

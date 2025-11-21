@@ -1,27 +1,30 @@
 package com.example.braintrap.ui.screen
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.braintrap.data.model.AppUsage
 import com.example.braintrap.ui.viewmodel.DashboardViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun DashboardScreen(
@@ -29,13 +32,23 @@ fun DashboardScreen(
     onNavigateToAppSelection: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToStatistics: () -> Unit,
-    onNavigateToAchievements: () -> Unit = {}
+    onNavigateToAchievements: () -> Unit,
+    onNavigateToActivityGrid: () -> Unit
 ) {
     val appUsageList by viewModel.appUsageList.collectAsState()
     val isFocusModeActive by viewModel.isFocusModeActive.collectAsState()
     val timeSavedStats by viewModel.timeSavedStats.collectAsState()
     val context = LocalContext.current
     var hasAccessibility by remember { mutableStateOf(false) }
+    
+    val nfcLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            // NFC verified, toggle focus mode off
+            viewModel.toggleFocusMode()
+        }
+    }
     
     // Check service status periodically
     LaunchedEffect(Unit) {
@@ -52,8 +65,11 @@ fun DashboardScreen(
         topBar = {
             @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
-                title = { Text("Mindful Usage") },
+                title = { Text("BrainTrap") },
                 actions = {
+                    IconButton(onClick = onNavigateToActivityGrid) {
+                        Icon(Icons.Default.DateRange, contentDescription = "Activity Grid")
+                    }
                     IconButton(onClick = onNavigateToStatistics) {
                         Icon(Icons.Default.Info, contentDescription = "Statistics")
                     }
@@ -62,18 +78,6 @@ fun DashboardScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.toggleFocusMode() },
-                containerColor = if (isFocusModeActive) MaterialTheme.colorScheme.errorContainer
-                else MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Icon(
-                    if (isFocusModeActive) Icons.Default.Close else Icons.Default.PlayArrow,
-                    contentDescription = if (isFocusModeActive) "Disable Focus Mode" else "Enable Focus Mode"
-                )
-            }
         }
     ) { padding ->
         Column(
@@ -83,7 +87,11 @@ fun DashboardScreen(
                 .padding(16.dp)
         ) {
             // Service status warning
-            if (!hasAccessibility) {
+            AnimatedVisibility(
+                visible = !hasAccessibility,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically()
+            ) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -128,38 +136,107 @@ fun DashboardScreen(
                 }
             }
             
-            if (isFocusModeActive) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Row(
+            AnimatedVisibility(
+                visible = isFocusModeActive,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Column {
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Focus Mode Active",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
                         )
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Focus Mode Active",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        }
+                    }
+                    
+                    // Check if NFC unlock is enabled
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val unlockMethod = remember { 
+                        context.getSharedPreferences("braintrap_prefs", android.content.Context.MODE_PRIVATE)
+                            .getString("unlock_method", "math") ?: "math"
+                    }
+                    
+                    if (unlockMethod == "nfc") {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "⚠️ NFC Focus Mode",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "• If you open a blocked app, your device will SHUTDOWN in 10 seconds\n• Tap your registered NFC tag to unlock\n• To turn OFF Focus Mode, tap the FAB button below and scan your NFC tag\n• BrainTrap app also requires NFC to access during Focus Mode\n• Keep your NFC tag nearby!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
+                                        lineHeight = 18.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
             
             // Time Saved Statistics Card
-            if (timeSavedStats.todayMinutes > 0) {
+            AnimatedVisibility(
+                visible = timeSavedStats.todayMinutes > 0,
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.05f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1500, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulse"
+                )
+                
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp),
+                        .padding(bottom = 16.dp)
+                        .scale(pulse),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     ),
@@ -233,10 +310,71 @@ fun DashboardScreen(
                 }
             }
             
+            // Big Focus Mode Button
+            val scale by animateFloatAsState(
+                targetValue = if (isFocusModeActive) 1.02f else 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy
+                ),
+                label = "button_scale"
+            )
+            
+            Button(
+                onClick = { 
+                    if (isFocusModeActive) {
+                        // Require NFC to turn off focus mode
+                        val intent = android.content.Intent(context, com.example.braintrap.ui.NfcVerificationActivity::class.java)
+                        nfcLauncher.launch(intent)
+                    } else {
+                        // Turn on focus mode (no NFC required)
+                        viewModel.toggleFocusMode()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .scale(scale),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isFocusModeActive) 
+                        MaterialTheme.colorScheme.error
+                    else 
+                        MaterialTheme.colorScheme.primary
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = if (isFocusModeActive) 8.dp else 4.dp
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(
+                    if (isFocusModeActive) Icons.Default.Close else Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = if (isFocusModeActive) "DISABLE FOCUS MODE" else "ENABLE FOCUS MODE",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
             if (appUsageList.isEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onNavigateToAppSelection,
+                var visible by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    delay(200)
+                    visible = true
+                }
+                
+                AnimatedVisibility(
+                    visible = visible,
+                    enter = fadeIn() + slideInVertically(),
+                    exit = fadeOut() + slideOutVertically()
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onNavigateToAppSelection,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                     )
@@ -268,18 +406,31 @@ fun DashboardScreen(
                         )
                     }
                 }
+                }
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = appUsageList,
-                        key = { it.packageName }
-                    ) { appUsage ->
-                        AppUsageCard(
-                            appUsage = appUsage,
-                            onRemove = { viewModel.removeApp(appUsage.packageName) }
-                        )
+                        key = { _, item -> item.packageName }
+                    ) { index, appUsage ->
+                        var visible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            delay(index * 50L)
+                            visible = true
+                        }
+                        
+                        AnimatedVisibility(
+                            visible = visible,
+                            enter = fadeIn() + slideInVertically { it / 2 },
+                            exit = fadeOut() + slideOutVertically()
+                        ) {
+                            AppUsageCard(
+                                appUsage = appUsage,
+                                onRemove = { viewModel.removeApp(appUsage.packageName) }
+                            )
+                        }
                     }
                 }
             }
@@ -404,37 +555,20 @@ fun AppUsageCard(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Used",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${appUsage.usedTimeMinutes} min",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Remaining",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${appUsage.remainingTimeMinutes} min",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (appUsage.remainingTimeMinutes == 0L) 
-                            MaterialTheme.colorScheme.error 
-                        else MaterialTheme.colorScheme.primary
-                    )
-                }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Time Remaining",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${appUsage.remainingTimeMinutes} min",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (appUsage.remainingTimeMinutes == 0L) 
+                        MaterialTheme.colorScheme.error 
+                    else MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
