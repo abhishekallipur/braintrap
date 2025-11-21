@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Mindful Usage</string>
+    <string name="accessibility_service_description">Mindful Usage needs accessibility permission to monitor and block apps when you reach your daily limits.</string>
+</resources>
